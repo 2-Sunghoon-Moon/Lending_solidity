@@ -482,6 +482,7 @@ contract Testx is Test {
 
     // 2023/03/22 05:32 - 여기까지 분석
 
+    // [미해결]
     function testExchangeRateChangeAfterUserBorrows() external {
         usdc.transfer(user3, 30000000 ether);
         vm.startPrank(user3);
@@ -489,7 +490,7 @@ contract Testx is Test {
         lending.deposit(address(usdc), 30000000 ether);
         vm.stopPrank();
 
-        supplyUSDCDepositUser1();
+        supplyUSDCDepositUser1();  // 100000000
         supplySmallEtherDepositUser2();
 
         dreamOracle.setPrice(address(0x0), 4000 ether);
@@ -521,7 +522,7 @@ contract Testx is Test {
         usdc.transfer(user4, 10000000 ether);
         vm.startPrank(user4);
         usdc.approve(address(lending), type(uint256).max);
-        lending.deposit(address(usdc), 10000000 ether);
+        lending.deposit(address(usdc), 10000000 ether);  // USER4: 10000000
         vm.stopPrank();
 
         vm.roll(block.number + (86400 * 500 / 12));
@@ -534,6 +535,7 @@ contract Testx is Test {
         vm.prank(user1);
         uint256 c = lending.getAccruedSupplyAmount(address(usdc));
 
+        console.log((a + b + c) / 1e18 - 30000000 - 10000000 - 100000000);
         assertEq((a + b + c) / 1e18 - 30000000 - 10000000 - 100000000, 6956);
         assertEq(a / 1e18 - 30000000, 1547);
         assertEq(b / 1e18 - 10000000, 251);
@@ -564,9 +566,11 @@ contract Testx is Test {
         vm.stopPrank();
     }
 
+
+
     function testLiquidationHealthyLoanFails() external {
-        supplyUSDCDepositUser1();
-        supplySmallEtherDepositUser2();
+        supplyUSDCDepositUser1();          // USER1 | USDC | 100000000 ether | 예금
+        supplySmallEtherDepositUser2();    // USER2 | ETH | 1 ether | 예금
 
         dreamOracle.setPrice(address(0x0), 4000 ether);
 
@@ -577,7 +581,7 @@ contract Testx is Test {
                 abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 2000 ether)
             );
             assertTrue(success);
-
+            console.log(usdc.balanceOf(user2) / 1e18);
             assertTrue(usdc.balanceOf(user2) == 2000 ether);
 
             usdc.approve(address(lending), type(uint256).max);
@@ -591,6 +595,8 @@ contract Testx is Test {
             (bool success,) = address(lending).call(
                 abi.encodeWithSelector(DreamAcademyLending.liquidate.selector, user2, address(usdc), 800 ether)
             );
+
+            console.log(success);
             assertFalse(success);
         }
         vm.stopPrank();

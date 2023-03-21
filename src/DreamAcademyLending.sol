@@ -220,6 +220,38 @@ contract DreamAcademyLending {
     // arg[1]: 토큰의 종류
     // arg[2]: 청산하고자 하는 양
     function liquidate(address user, address tokenAddress, uint256 amount) external {
+        console.log("[+] liquidate");
+        console.log("USER: ", user);
+        console.log("TOKEN ADDR: ", tokenAddress);
+        console.log("AMOUNT: ", amount);
+
+
+        if(tokenAddress == address(0x0)) {
+            revert();
+        } else {
+            // 청산조건 검증
+            // participateBooks[msg.sender].usdc_borrow
+
+
+
+
+
+            uint256 approveAmount = tokenUSDC.allowance(user, address(this));
+
+            if(approveAmount >= amount) {
+                tokenUSDC.transferFrom(user, address(this), amount);
+
+                USDCBalance += amount;
+                USDCtotalBorrow -= amount;
+                participateBooks[msg.sender].usdc_balance -= amount;
+                participateBooks[msg.sender].usdc_borrow -= amount;
+
+
+                revert();
+            } else {
+                
+            }
+        }
 
     }
 
