@@ -10,5 +10,5 @@ def test(p, rate, n):
     return result
 
 
-print(test(1000, 0.01, 3))
+print(test(2000, 0.001, 1000))
     
