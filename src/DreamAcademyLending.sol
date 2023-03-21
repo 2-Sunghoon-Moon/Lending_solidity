@@ -183,9 +183,15 @@ contract DreamAcademyLending {
     function liquidate(address user, address tokenAddress, uint256 amount) external {
 
     }
+
+    // withdraw(address tokenAddress, uint256 amount)
+    // DESC: 금액을 인출하는 함수, 단 이자율을 고려해야 한다.
+    // arg[0]: 인출하고자 하는 토큰
+    // arg[1]: 인출하고자 하는 금액
     function withdraw(address tokenAddress, uint256 amount) external {
 
     }
+
 
     function getAccruedSupplyAmount(address token) external pure returns (uint256) {
 
