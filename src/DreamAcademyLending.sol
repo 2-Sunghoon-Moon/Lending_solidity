@@ -11,11 +11,15 @@ contract DreamAcademyLending {
     address private _owner;
     DreamOracle private _orcale;
 
-    ERC20 usdc;
-    ERC20 eth;
+    ERC20 tokenUSDC;
+    ERC20 tokenETH;
 
-    uint256 ethBalance;
-    uint256 usdcBalance;
+    uint256 ETHBalance;               // 대출 시스템에 예치된 ETH의 보유량    (deposit, borrow, withdraw 영향)
+    uint256 USDCBalance;              // 대출 시스템에 예치된 USDC의 보유량   (deposit, borrow, withdraw 영향)
+
+
+    uint256 ETHtotalBorrow;           // 총 대출해간 ETH의 양
+    uint256 USDCtotalBorrow;          // 총 대출해간 USDC의 양
 
 
     uint32 public constant LTV = 50;                   // unit: percentage
@@ -24,22 +28,21 @@ contract DreamAcademyLending {
 
 
     struct AccountBook {
+        uint256 eth_balance;
+        uint256 usdc_balance;
         uint256 eth_deposit;
         uint256 usdc_deposit;
         uint256 eth_borrow;
         uint256 usdc_borrow;
+
+        uint256 eth_interest;
+        uint256 usdc_interest;
     }
 
 
-
-    mapping(address => uint256) public depositETH;      // deposit한 사람들의 금액(ETH)정보
-    mapping(address => uint256) public depositUSDC;     // deposit한 사람들의 금액(USDC)정보
- 
-    // mapping(address => mapping(uint256 => uint256)) public depositTimestamp; // USDC를 대출한 시간정보를 기억함
-
-
-    // 대출정보를 잘 조회하기 위해서는 어떤 자료 구조가 필요할까?
-    mapping(address => AccountBook) public accountBooks;
+    address[] particpants;                                  // 해당 시스템의 참여자
+    mapping(address => bool) public participateState;       // 주소의 참여여부
+    mapping(address => AccountBook) public participateBooks;    // 유저의 예금/대출/잔액 이력
 
 
     uint256 private _prevBlockTime;
@@ -49,10 +52,10 @@ contract DreamAcademyLending {
 
     function debugBook(address user) public {
         console.log("[",user,"]");
-        console.log("[ETH_DEPOSIT]: ", accountBooks[user].eth_deposit / 1e18);
-        console.log("[USDC_DEPOSIT]: ", accountBooks[user].usdc_deposit /1e18);
-        console.log("[ETH_BORROW]: ", accountBooks[user].eth_borrow / 1e18);
-        console.log("[USDC_BORROW]: ", accountBooks[user].usdc_borrow / 1e18);
+        console.log("[ETH_DEPOSIT]: ", participateBooks[user].eth_deposit / 1e18);
+        console.log("[USDC_DEPOSIT]: ", participateBooks[user].usdc_deposit /1e18);
+        console.log("[ETH_BORROW]: ", participateBooks[user].eth_borrow / 1e18);
+        console.log("[USDC_BORROW]: ", participateBooks[user].usdc_borrow / 1e18);
     }
 
 
@@ -60,45 +63,55 @@ contract DreamAcademyLending {
         _owner = msg.sender;
         _orcale = DreamOracle(address(_ioracle));
 
-        usdc = ERC20(_lendingToken);
-        eth = ERC20(address(0x0));
+        tokenUSDC = ERC20(_lendingToken);
+        // tokenETH = ERC20(address(0x0));
     }
+
 
     function initializeLendingProtocol(address t) payable external {
         require(_owner == msg.sender);
 
-        usdc.transferFrom(msg.sender, address(this), msg.value);
-        usdcBalance += msg.value;
-
+        tokenUSDC.transferFrom(msg.sender, address(this), msg.value);
+        USDCBalance += msg.value;
     }
+
 
     function deposit(address tokenAddress, uint256 amount) payable external {
         console.log("[+] deposit");
         console.log("Token Addr: ", tokenAddress);
 
 
+        // 참여자 정보 생성
+        if(!participateState[msg.sender]) {
+            particpants.push(msg.sender);
+            participateBooks[msg.sender] = AccountBook(0,0,0,0,0,0,0,0);
+            participateState[msg.sender] = true;
+        }
+
+        _updateInterest();
+
         if(tokenAddress == address(0x0)) {
             require(msg.value > 0);
             require(amount > 0);
             require(amount <= msg.value);
 
-            // eth.transferFrom(msg.sender, address(this), amount);
+            ETHBalance += amount;
 
-            ethBalance += amount;
-            depositETH[msg.sender] += amount;
-            accountBooks[msg.sender].eth_deposit += amount;
+            participateBooks[msg.sender].eth_balance += amount;
+            participateBooks[msg.sender].eth_deposit += amount;
         } else {
-            // console.log("USDC Balance: ", usdc.balanceOf(address(this)));
-            usdc.transferFrom(msg.sender, address(this), amount);
+            require(tokenUSDC.allowance(msg.sender, address(this)) > amount);
+            tokenUSDC.transferFrom(msg.sender, address(this), amount);
 
-            usdcBalance += amount;
-            depositUSDC[msg.sender] += amount;
-            accountBooks[msg.sender].usdc_deposit += amount;
+            USDCBalance += amount;
+
+            participateBooks[msg.sender].usdc_balance += amount;
+            participateBooks[msg.sender].usdc_deposit += amount;
         }        
 
         debugBook(msg.sender);
-        console.log("ETH Balance: ", ethBalance / (10 ** 18));
-        console.log("USDC Balance: ", usdcBalance / (10 ** 18));
+        console.log("ETH Balance: ", ETHBalance / (10 ** 18));
+        console.log("USDC Balance: ", USDCBalance / (10 ** 18));
         console.log("\n");
     }
 
@@ -115,47 +128,46 @@ contract DreamAcademyLending {
         console.log("AMOUNT: ", amount / (10 ** 18));
 
 
+        // 참여자 정보 생성
+        if(!participateState[msg.sender]) {
+            particpants.push(msg.sender);
+            participateBooks[msg.sender] = AccountBook(0,0,0,0,0,0,0,0);
+            participateState[msg.sender] = true;
+        }
 
+        _updateInterest();
         // ETH 대출
         if(tokenAddress == address(0x0)) {
-
+            // ETH -> USDC 대출 불가
+            revert();
         } 
         // USDC 대출
         else {
             uint256 ratio = _orcale.getPrice(address(0x0)) / _orcale.getPrice(address(tokenAddress));   
-            // console.log("RATIO:", ratio);
 
-            uint256 borrowableAmount = depositETH[msg.sender] * ratio * 50 / 100;
 
-            console.log("BorrowableAmount: ", borrowableAmount / 10 ** 18);
+            // 차용가능한 금액 환산
+            uint256 borrowedUSDC = participateBooks[msg.sender].usdc_balance;
+            uint256 borrowableUSDC = participateBooks[msg.sender].eth_balance * ratio / 2;
 
+            borrowableUSDC = borrowableUSDC - borrowedUSDC;   // LTV 고려
+            console.log("borrowABLEAMOUNT", borrowableUSDC / 1e18);
             
-            require(amount <= borrowableAmount);         // LTV(50%)를 고려하여 빌릴 수 있는 양 예시) 1이더 -> 669.5USDC 빌림(LTV 50%)
-            require(amount <= usdcBalance);              // 대출하고자 하는 금액이 Lending에 존재해야 한다.
-            // require(depositTimestamp[msg.sender] == 0);  // 대출한 여부가 없어야 한다.
+            require(amount <= USDCBalance);              // 대출하고자 하는 금액이 Lending에 존재해야 한다.
+            require(amount <= borrowableUSDC);         // LTV(50%)를 고려하여 빌릴 수 있는 양 예시) 1이더 -> 669.5USDC 빌림(LTV 50%)
 
 
             ERC20(tokenAddress).transfer(msg.sender, amount);
 
-            usdcBalance -= amount;
-            // 돈빌린 정보 기억할 수 있어야 한다.
-            // 얼마의 ETH를 통해서 USDC 빌렸는지 언제 빌렸는지
-            // mapping(address => History[]) public borrowHistory;
-            // borrowHistory[msg.sender].push(History(amount, block.number));
-
-            
-            // 빌린금액을 사용자의 ETH에서 차감해야 한다.
-            // console.log("amount to ETH: ", depositETH[msg.sender] * amount / borrowableAmount);   // 1000 USDC를 빌림 ->
-
-            depositETH[msg.sender] -= depositETH[msg.sender] * amount / borrowableAmount;         // [문제] 나누기 3이 들어가기 때문에 숫자 정밀도에서 오류가 발생할 수 있음
-            // console.log(depositETH[msg.sender]);
-            accountBooks[msg.sender].usdc_borrow += amount;
-
+            USDCBalance -= amount;
+            participateBooks[msg.sender].usdc_balance += amount;
+            participateBooks[msg.sender].usdc_borrow += amount;
+            USDCtotalBorrow += amount;
         }       
 
         debugBook(msg.sender);
-        console.log("ETH Balance: ", ethBalance / (10 ** 18));
-        console.log("USDC Balance: ", usdcBalance / (10 ** 18));
+        console.log("ETH Balance: ", ETHBalance / (10 ** 18));
+        console.log("USDC Balance: ", USDCBalance / (10 ** 18));
         console.log("\n"); 
     }
 
@@ -174,26 +186,26 @@ contract DreamAcademyLending {
 
         // require(실제 repay하는 사람이 돈을 빌린사람인가 확인)
 
-        if(tokenAddress == address(0x0)) {
+        // if(tokenAddress == address(0x0)) {
 
-        } 
-        // USDC 상환
-        else {
-            uint256 ratio = _orcale.getPrice(address(0x0)) / _orcale.getPrice(address(tokenAddress));  
-            console.log("REPAY_MONEY: 0.", amount * 2 / ratio / 10 ** 17);
+        // } 
+        // // USDC 상환
+        // else {
+        //     uint256 ratio = _orcale.getPrice(address(0x0)) / _orcale.getPrice(address(tokenAddress));  
+        //     console.log("REPAY_MONEY: 0.", amount * 2 / ratio / 10 ** 17);
         
-            require(ERC20(tokenAddress).allowance(msg.sender, address(this)) >=  amount * 2 / ratio);  // 돈 실제로 상환했는 지 검증
+        //     require(ERC20(tokenAddress).allowance(msg.sender, address(this)) >=  amount * 2 / ratio);  // 돈 실제로 상환했는 지 검증
 
-            ERC20(tokenAddress).transferFrom(msg.sender, address(this), amount * 2 / ratio);
-            depositETH[msg.sender] += amount * 2 / ratio;                 // 상환한 ETH 개인계정에 추가
+        //     ERC20(tokenAddress).transferFrom(msg.sender, address(this), amount * 2 / ratio);
+        //     depositETH[msg.sender] += amount * 2 / ratio;                 // 상환한 ETH 개인계정에 추가
 
-            // borrowHistory[msg.sender].push(History(amount, block.time));
-            // console.log(borrowHistory[msg.sender].length);
-        }
+        //     // borrowHistory[msg.sender].push(History(amount, block.time));
+        //     // console.log(borrowHistory[msg.sender].length);
+        // }
 
 
-        console.log("ETH Balance: ", ethBalance / (10 ** 18));
-        console.log("USDC Balance: ", usdcBalance / (10 ** 18));
+        console.log("ETH Balance: ", ETHBalance / (10 ** 18));
+        console.log("USDC Balance: ", USDCBalance / (10 ** 18));
         console.log("\n"); 
 
         // 이자 = 빌린금액 * (0.1 * blocktime / 1시간)
@@ -223,37 +235,63 @@ contract DreamAcademyLending {
         console.log("[+] withdraw()");
         console.log("address: ", tokenAddress);
         console.log("amount: ", amount);
-        console.log("ETH Balance: ", ethBalance / (10 ** 18));
-        console.log("USDC Balance: ", usdcBalance / (10 ** 18));
+        console.log("ETH Balance: ", ETHBalance / (10 ** 18));
+        console.log("USDC Balance: ", USDCBalance / (10 ** 18));
         console.log("\n"); 
 
-        ERC20 token = ERC20(tokenAddress);
-        
 
+        // 참여자 정보 생성
+        if(!participateState[msg.sender]) {
+            particpants.push(msg.sender);
+            participateBooks[msg.sender] = AccountBook(0,0,0,0,0,0,0,0);
+            participateState[msg.sender] = true;
+        }
+
+        _updateInterest();
 
         if(tokenAddress == address(0x0)) {
-            console.log(depositETH[msg.sender]);
-            console.log(amount);
+            require(ETHBalance >= amount);  
             
-            require(depositETH[msg.sender] >= amount);    
+
+            // 인출로직 청산비율 고려해서 작성해야함
+            uint256 borrowedETH = participateBooks[msg.sender].usdc_borrow  * 2 / _orcale.getPrice(address(0x0)) * 1e18;
+            console.log(participateBooks[msg.sender].eth_balance - borrowedETH);
+
+            require(participateBooks[msg.sender].eth_balance - borrowedETH >= amount);  
 
             (bool success, ) = payable(msg.sender).call{value: amount}("");
-            console.log(success);
 
-            ethBalance -= amount;
-            depositETH[msg.sender] -= amount;
-            accountBooks[msg.sender].eth_deposit -= amount;
+            ETHBalance -= amount;
+            
+            participateBooks[msg.sender].eth_balance -= amount;
+            participateBooks[msg.sender].eth_deposit -= amount;
 
-            console.log("[-]");
 
         } else {
-            require(depositUSDC[msg.sender] >= amount); 
-            token.transfer(msg.sender, amount);
+            require(USDCBalance >= amount); 
+            require(participateBooks[msg.sender].usdc_balance + participateBooks[msg.sender].usdc_interest >= amount); 
 
 
-            usdcBalance -= amount;
-            depositUSDC[msg.sender] -= amount;
-            accountBooks[msg.sender].usdc_deposit -= amount;
+            // 인출을 요청하는 USDC가 이자를 제외하고 추출이 가능한 경우
+            if(participateBooks[msg.sender].usdc_balance < amount) {
+                console.log("WITH INTEREST: ", amount);
+                tokenUSDC.transfer(msg.sender, amount);
+
+                require(participateBooks[msg.sender].usdc_interest >= (amount - participateBooks[msg.sender].usdc_balance));
+
+                participateBooks[msg.sender].usdc_interest -= (amount - participateBooks[msg.sender].usdc_balance);
+                participateBooks[msg.sender].usdc_balance = 0;
+                participateBooks[msg.sender].usdc_deposit = 0;
+
+            } else {
+                tokenUSDC.transfer(msg.sender, amount);
+                
+                participateBooks[msg.sender].usdc_balance -= amount;
+                participateBooks[msg.sender].usdc_deposit -= amount;
+            }
+            
+            
+            USDCBalance -= amount;
         }
 
 
@@ -263,8 +301,8 @@ contract DreamAcademyLending {
 
 
         debugBook(msg.sender);
-        console.log("ETH Balance: ", ethBalance / (10 ** 18));
-        console.log("USDC Balance: ", usdcBalance / (10 ** 18));
+        console.log("ETH Balance: ", ETHBalance / (10 ** 18));
+        console.log("USDC Balance: ", USDCBalance / (10 ** 18));
         console.log("\n"); 
     }
 
@@ -304,25 +342,60 @@ contract DreamAcademyLending {
 
 
 
+    // 참여자의 이자를 업데이트 한다.
+    function _updateInterest() internal {
+        // console.log("[+] UPDATE");
+        uint256 _user_principal;  // 참여자의 원금
+        uint256 _user_interest;   // 참여자의 이자
+
+        for(uint256 i=0; i<particpants.length; i++) {
+            // console.log("[P] ", particpants[i]);
+
+            AccountBook memory book = participateBooks[particpants[i]];
+
+            if(book.eth_deposit == 0 && book.usdc_deposit == 0) {
+                continue;
+            } else {
+                //
+                uint256 blockDays = (block.number - uint256(1)) / 7200 ;
+
+                uint256 prime = USDCtotalBorrow;
+                uint256 prime_interest = calculateInterest(prime, blockDays);  // 이자 계산
+
+                uint256 result = (book.usdc_deposit / 1e18 * RAY) + (prime_interest - (prime * RAY / 1e18)) * 
+                        book.usdc_deposit / (USDCBalance + USDCtotalBorrow) ;   // 지분율
+
+                _user_interest = (result * 1e18 / RAY) - book.usdc_deposit;
+
+
+                participateBooks[particpants[i]].usdc_interest = _user_interest;
+            }
+        }
+
+    } 
 
 
     function getAccruedSupplyAmount(address token) external returns (uint256) {
-        console.log("[+] getAccruedSupplyAmount()");
-        console.log("    block_time: ", block.number);
+        _updateInterest();
+
+        if(participateState[msg.sender]) {
+            console.log(participateBooks[msg.sender].usdc_deposit + participateBooks[msg.sender].usdc_interest);
+            return participateBooks[msg.sender].usdc_deposit + participateBooks[msg.sender].usdc_interest;
+        } else {
+            return 0;
+        }
+
+        // uint256 blockDays = (block.number - uint256(1)) / 7200 ; // 몇일 흘렀는지
+
+        // uint256 prime = USDCtotalBorrow;
+        // uint256 prime_interest = calculateInterest(prime, blockDays);  // 이자 계산
+
+        // uint256 result = (participateBooks[msg.sender].usdc_deposit / 1e18 * RAY) + (prime_interest - (prime * RAY / 1e18)) * 
+        //                 participateBooks[msg.sender].usdc_deposit / (USDCBalance + USDCtotalBorrow) ;   // 지분율
 
 
 
-        uint256 blockDays = (block.number - uint256(1)) / 7200 ; // 몇일 흘렀는지
-
-        uint256 prime = 2000 ether;   // 빌려간 금액
-        uint256 prime_interest = calculateInterest(prime, blockDays);  // 이자 계산
-
-        uint256 result = ((30000000 * RAY) + (prime_interest - (prime * RAY / 1e18)) * 3 / 13 );   // 지분율 고려
         
-        // console.log(result * 1e18 / RAY);
-
-
-        return result * 1e18 / RAY;
     }
 
 
@@ -330,9 +403,9 @@ contract DreamAcademyLending {
     // arg[0]: 빌려간 금액에 대해서 입력하는 정보 (ether 단위 아님)
     // arg[1]: 블록시간을 계산하여 몇 일이 지났는지에 대한 정보
     function calculateInterest(uint256 borrowAmount, uint256 blockPeriodDays) internal returns (uint256) {
-        console.log("[+] calculateInterest()");
-        console.log("    borrowAmount: ", borrowAmount);
-        console.log("    blockPeriodDays: ", blockPeriodDays);
+        // console.log("[+] calculateInterest()");
+        // console.log("    borrowAmount: ", borrowAmount);
+        // console.log("    blockPeriodDays: ", blockPeriodDays);
 
         uint256 _borrowAmount = borrowAmount / 1e18;  // 보정
         uint256 interest = mul(_borrowAmount, rpow(1001 * RAY / 1000, blockPeriodDays));
