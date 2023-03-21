@@ -219,27 +219,32 @@ contract DreamAcademyLending {
     // DESC: 금액을 인출하는 함수, 단 이자율을 고려해야 한다.
     // arg[0]: 인출하고자 하는 토큰
     // arg[1]: 인출하고자 하는 금액
-    function withdraw(address tokenAddress, uint256 amount) payable external {
+    function withdraw(address tokenAddress, uint256 amount)  external {
         console.log("[+] withdraw()");
         console.log("address: ", tokenAddress);
         console.log("amount: ", amount);
+        console.log("ETH Balance: ", ethBalance / (10 ** 18));
+        console.log("USDC Balance: ", usdcBalance / (10 ** 18));
+        console.log("\n"); 
 
         ERC20 token = ERC20(tokenAddress);
+        
+
 
         if(tokenAddress == address(0x0)) {
             console.log(depositETH[msg.sender]);
-            console.log(address(this).balance);
+            console.log(amount);
+            
             require(depositETH[msg.sender] >= amount);    
-            console.log(address(this).balance >= amount);
-            (bool success, ) = msg.sender.call{value: amount}("");
 
+            (bool success, ) = payable(msg.sender).call{value: amount}("");
             console.log(success);
 
             ethBalance -= amount;
             depositETH[msg.sender] -= amount;
             accountBooks[msg.sender].eth_deposit -= amount;
 
-            console.log("========================================");
+            console.log("[-]");
 
         } else {
             require(depositUSDC[msg.sender] >= amount); 
@@ -342,7 +347,7 @@ contract DreamAcademyLending {
 
 
 
-    // https://github.com/dapphub/ds-math
+    // https://github.com/wolflo/solidity-interest-helper
     uint constant RAY = 10 ** 27;
 
     function add(uint x, uint y) internal view returns (uint z) {
