@@ -10,5 +10,5 @@ def test(p, rate, n):
     return result
 
 
-print(test(2000, 0.001, 1000))
+print((test(2000, 0.01, 1500) - 2000) * (3/13))
     

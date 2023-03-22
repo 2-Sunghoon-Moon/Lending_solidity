@@ -17,10 +17,8 @@ contract DreamAcademyLending {
     uint256 ETHBalance;               // 대출 시스템에 예치된 ETH의 보유량    (deposit, borrow, withdraw 영향)
     uint256 USDCBalance;              // 대출 시스템에 예치된 USDC의 보유량   (deposit, borrow, withdraw 영향)
 
-
     uint256 ETHtotalBorrow;           // 총 대출해간 ETH의 양
     uint256 USDCtotalBorrow;          // 총 대출해간 USDC의 양
-
 
     uint32 public constant LTV = 50;                   // unit: percentage
     uint32 public constant INTEREST_RATE = 1;          // unit: percentage
@@ -42,9 +40,9 @@ contract DreamAcademyLending {
     }
 
 
-    address[] particpants;                                  // 해당 시스템의 참여자
-    mapping(address => bool) public participateState;       // 주소의 참여여부
-    mapping(address => AccountBook) public participateBooks;    // 유저의 예금/대출/잔액 이력
+    address[] particpants;                                       // 해당 시스템의 참여자
+    mapping(address => bool) public participateState;            // 주소의 참여여부
+    mapping(address => AccountBook) public participateBooks;     // 유저의 예금/대출/잔액 이력
 
 
     uint256 private _prevBlockTime;
@@ -242,7 +240,7 @@ contract DreamAcademyLending {
 
 
 
-    function _createBook(address p) internal {
+    function _createBook(address p) private {
         if(!participateState[p]) {
             particpants.push(p);
             participateBooks[p] = AccountBook(0,0,0,0,0,0,0,0,0);
@@ -316,11 +314,6 @@ contract DreamAcademyLending {
         }
 
 
-            
-        
-
-
-
         debugBook(msg.sender);
         console.log("ETH Balance: ", ETHBalance / (10 ** 18));
         console.log("USDC Balance: ", USDCBalance / (10 ** 18));
@@ -331,40 +324,9 @@ contract DreamAcademyLending {
 
 
 
-    function calculate(uint256 p, uint256 rate_n, uint256 rate_d, uint256 n) internal returns (uint256) { 
-        require(p >= 1000);
-        require(rate_n > rate_d); 
-
-        
-        // [VERSION 2]
-        // uint256 t1 = (rate_n ** n) - (rate_d ** n);
-        // uint256 t2 = rate_d ** (n);
-        // uint256 t3 = rate_n - rate_d;
-        // uint256 t4 = rate_d;
-
-
-        // require(((p / 1000) * (t1 * t4)) > (t2 * t3));
-
-        // uint256 result = ((p / 1000) * (t1 * t4)) / (t2 * t3);
-        // result += p;
-
-
-        // [VERSION3]
-        // uint256 t1 = rate_d * ((rate_n / rate_d) ** n - 1);      // -> rate_n과 rate_d를 나누면 1로 수렴하게된다. 방법이 없을까?
-        // uint256 t2 = rate_n - rate_d;
-
-        // uint256 result = t1 / t2;
-        // result += p;
-
-        uint256 test = rpow(1001, 1000);
-
-        return test;
-    }
-
-
 
     // 참여자의 이자를 업데이트 한다.
-    function _updateInterest() internal {
+    function _updateInterest() private {
         // console.log("[+] UPDATE");
         uint256 _user_principal;  // 참여자의 원금
         uint256 _user_interest;   // 참여자의 이자
@@ -423,7 +385,7 @@ contract DreamAcademyLending {
     // 이자를 포함하여 계산하는 함수
     // arg[0]: 빌려간 금액에 대해서 입력하는 정보 (ether 단위 아님)
     // arg[1]: 블록시간을 계산하여 몇 일이 지났는지에 대한 정보
-    function calculateInterest(uint256 borrowAmount, uint256 blockPeriodDays) internal returns (uint256) {
+    function calculateInterest(uint256 borrowAmount, uint256 blockPeriodDays) private returns (uint256) {
         // console.log("[+] calculateInterest()");
         // console.log("    borrowAmount: ", borrowAmount);
         // console.log("    blockPeriodDays: ", blockPeriodDays);
