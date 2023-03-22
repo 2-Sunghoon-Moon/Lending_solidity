@@ -37,6 +37,8 @@ contract DreamAcademyLending {
 
         uint256 eth_interest;
         uint256 usdc_interest;
+
+        uint256 eth_collateral;
     }
 
 
@@ -82,11 +84,7 @@ contract DreamAcademyLending {
 
 
         // 참여자 정보 생성
-        if(!participateState[msg.sender]) {
-            particpants.push(msg.sender);
-            participateBooks[msg.sender] = AccountBook(0,0,0,0,0,0,0,0);
-            participateState[msg.sender] = true;
-        }
+        _createBook(msg.sender);
 
         _updateInterest();
 
@@ -99,6 +97,7 @@ contract DreamAcademyLending {
 
             participateBooks[msg.sender].eth_balance += amount;
             participateBooks[msg.sender].eth_deposit += amount;
+            participateBooks[msg.sender].eth_collateral += amount;
         } else {
             require(tokenUSDC.allowance(msg.sender, address(this)) > amount);
             tokenUSDC.transferFrom(msg.sender, address(this), amount);
@@ -129,16 +128,11 @@ contract DreamAcademyLending {
 
 
         // 참여자 정보 생성
-        if(!participateState[msg.sender]) {
-            particpants.push(msg.sender);
-            participateBooks[msg.sender] = AccountBook(0,0,0,0,0,0,0,0);
-            participateState[msg.sender] = true;
-        }
-
+        _createBook(msg.sender);
         _updateInterest();
         // ETH 대출
         if(tokenAddress == address(0x0)) {
-            // ETH -> USDC 대출 불가
+            // USDC -> ETH 대출 불가
             revert();
         } 
         // USDC 대출
@@ -181,28 +175,24 @@ contract DreamAcademyLending {
         console.log("[+] repay");
         console.log("Token Addr: ", tokenAddress);
         console.log("AMOUNT: ", amount / (10 ** 18));
-         console.log("TIME_STAMP: ", block.number);
+        console.log("TIME_STAMP: ", block.number);
 
 
-        // require(실제 repay하는 사람이 돈을 빌린사람인가 확인)
+        require(amount > 0);
 
-        // if(tokenAddress == address(0x0)) {
+        // 참여자 정보 생성
+        _createBook(msg.sender);
+        _updateInterest();
 
-        // } 
-        // // USDC 상환
-        // else {
-        //     uint256 ratio = _orcale.getPrice(address(0x0)) / _orcale.getPrice(address(tokenAddress));  
-        //     console.log("REPAY_MONEY: 0.", amount * 2 / ratio / 10 ** 17);
+        if(tokenAddress == address(0x0)) {
+            revert();
+        } else {
+            require(tokenUSDC.allowance(msg.sender, address(this)) >= amount);
+            
+            participateBooks[msg.sender].usdc_borrow -= amount;
+            tokenUSDC.transferFrom(msg.sender, address(this), amount);
+        }
         
-        //     require(ERC20(tokenAddress).allowance(msg.sender, address(this)) >=  amount * 2 / ratio);  // 돈 실제로 상환했는 지 검증
-
-        //     ERC20(tokenAddress).transferFrom(msg.sender, address(this), amount * 2 / ratio);
-        //     depositETH[msg.sender] += amount * 2 / ratio;                 // 상환한 ETH 개인계정에 추가
-
-        //     // borrowHistory[msg.sender].push(History(amount, block.time));
-        //     // console.log(borrowHistory[msg.sender].length);
-        // }
-
 
         console.log("ETH Balance: ", ETHBalance / (10 ** 18));
         console.log("USDC Balance: ", USDCBalance / (10 ** 18));
@@ -215,7 +205,8 @@ contract DreamAcademyLending {
 
 
     // liquidate(address user, address tokenAddress, uint256 amount)
-    // DESC: 강제 청산을 진행하는 함수
+    // DESC: 강제 청산을 진행하는 함수 청산을 요구한 사람이 담보에 해당하는 만큼의 금액을 가져갈 수 있으며 제공한 비용은 프로토콜에서
+    //       가져갈 수 있도록 한다.
     // arg[0]: 고객
     // arg[1]: 토큰의 종류
     // arg[2]: 청산하고자 하는 양
@@ -224,40 +215,41 @@ contract DreamAcademyLending {
         console.log("USER: ", user);
         console.log("TOKEN ADDR: ", tokenAddress);
         console.log("AMOUNT: ", amount);
+        _createBook(msg.sender);
 
+
+        require(amount > 0);
 
         if(tokenAddress == address(0x0)) {
             revert();
         } else {
-            // 청산조건 검증
-            // participateBooks[msg.sender].usdc_borrow
+            uint256 ratio = _orcale.getPrice(address(0x0)) / _orcale.getPrice(address(tokenAddress)); 
 
+            require((participateBooks[user].usdc_borrow * 25)  >= amount * 100);
+            require(ratio * participateBooks[user].eth_collateral * LIQUIDATION_THRESHOLD < participateBooks[user].usdc_borrow * 100);
 
+            uint256 amountETH = amount * participateBooks[user].eth_collateral / participateBooks[user].usdc_borrow;
+            
 
+            require(tokenUSDC.allowance(msg.sender, address(this)) >= amount);
 
+            participateBooks[user].usdc_borrow -= amount;
+            tokenUSDC.transferFrom(msg.sender, address(this), amount);
+            payable(msg.sender).transfer(amountETH);
 
-            uint256 approveAmount = tokenUSDC.allowance(user, address(this));
-
-            if(approveAmount >= amount) {
-                tokenUSDC.transferFrom(user, address(this), amount);
-
-                USDCBalance += amount;
-                USDCtotalBorrow -= amount;
-                participateBooks[msg.sender].usdc_balance -= amount;
-                participateBooks[msg.sender].usdc_borrow -= amount;
-
-
-                revert();
-            } else {
-                
-            }
         }
-
     }
 
 
 
+    function _createBook(address p) internal {
+        if(!participateState[p]) {
+            particpants.push(p);
+            participateBooks[p] = AccountBook(0,0,0,0,0,0,0,0,0);
+            participateState[p] = true;
+        }
 
+    }
 
     // withdraw(address tokenAddress, uint256 amount)
     // DESC: 금액을 인출하는 함수, 단 이자율을 고려해야 한다.
@@ -273,11 +265,7 @@ contract DreamAcademyLending {
 
 
         // 참여자 정보 생성
-        if(!participateState[msg.sender]) {
-            particpants.push(msg.sender);
-            participateBooks[msg.sender] = AccountBook(0,0,0,0,0,0,0,0);
-            participateState[msg.sender] = true;
-        }
+        _createBook(msg.sender);
 
         _updateInterest();
 
@@ -297,6 +285,7 @@ contract DreamAcademyLending {
             
             participateBooks[msg.sender].eth_balance -= amount;
             participateBooks[msg.sender].eth_deposit -= amount;
+            participateBooks[msg.sender].eth_collateral -= amount;
 
 
         } else {
