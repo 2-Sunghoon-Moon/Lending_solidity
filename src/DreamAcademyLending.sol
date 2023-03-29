@@ -117,14 +117,12 @@ contract DreamAcademyLending {
 
         } else { // USDC TOKEN
             require(USDC_TOKEN.allowance(msg.sender, address(this)) >= amount);
-            USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
-
             ledgers[msg.sender].USDC_balance += amount;
-
             USDC_TOTAL_DEPOSIT += amount;
-        }
 
-        _printLendingBalance();
+
+            USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
+        }
     }
 
 
@@ -148,7 +146,7 @@ contract DreamAcademyLending {
 
         require(amount + USDC_debt <= USDC_collateral_LTV );
 
-        USDC_TOKEN.transfer(msg.sender, amount);
+        
 
         ledgers[msg.sender].USDC_debt += amount;
         ledgers[msg.sender].USDC_borrow_time = block.number;
@@ -159,10 +157,7 @@ contract DreamAcademyLending {
         _interInfo.USDC_total_debt += amount;
         _interInfo.blockTime = block.number;
 
-        // console.log("USDC_TOTAL_DEBT: ", _interInfo.USDC_total_debt);
-        // console.log("BLOCKTIME: ", _interInfo.blockTime);
-
-        _printUserLedger(msg.sender);
+        USDC_TOKEN.transfer(msg.sender, amount);
     }
 
 
@@ -184,12 +179,10 @@ contract DreamAcademyLending {
         require(amount > 0 , "2");
         require(USDC_TOKEN.allowance(msg.sender, address(this)) >= amount, "3");
         
+        USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
 
         _interInfo.USDC_total_debt -= amount;
         ledgers[msg.sender].USDC_debt -= amount;
-        console.log("AFTER REAPY: ", ledgers[msg.sender].USDC_debt);
-
-        USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
     }
 
 
@@ -202,7 +195,7 @@ contract DreamAcademyLending {
     // arg[2]: 청산하고자 하는 양
     function liquidate(address user, address tokenAddress, uint256 amount) external {
         require(tokenAddress == address(USDC_TOKEN));
-        
+
         _addUser(msg.sender);
         _updateInterest(msg.sender);
 
