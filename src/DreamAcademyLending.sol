@@ -201,6 +201,8 @@ contract DreamAcademyLending {
     // arg[1]: 토큰의 종류
     // arg[2]: 청산하고자 하는 양
     function liquidate(address user, address tokenAddress, uint256 amount) external {
+        require(tokenAddress == address(USDC_TOKEN));
+        
         _addUser(msg.sender);
         _updateInterest(msg.sender);
 
@@ -229,10 +231,10 @@ contract DreamAcademyLending {
         // require(amount <= USDC_TOKEN.allowance(msg.sender, address(this)));
         // require(amount <= USDC_TOKEN.balanceOf(msg.sender));
         // USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
-
-
         ledgers[user].USDC_debt -= amount;
     }
+
+    
 
     // withdraw(address tokenAddress, uint256 amount)
     // DESC: 금액을 인출하는 함수, 단 이자율을 고려해야 한다.
