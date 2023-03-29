@@ -695,7 +695,7 @@ contract Testx is Test {
         {
             // use all collateral
             (bool success,) = address(lending).call(
-                abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 2000 ether)
+                abi.encodeWithSelector(DreamAcademyLending.borrow.selector, address(usdc), 2000 ether)   // borrow
             );
             assertTrue(success);
 
@@ -705,7 +705,7 @@ contract Testx is Test {
         }
         vm.stopPrank();
 
-        supplySmallEtherDepositUser2();
+        supplySmallEtherDepositUser2();                                                                  // deposit
 
         dreamOracle.setPrice(address(0x0), (4000 * 66 / 100) * 1e18); // drop price to 66%
         usdc.transfer(user3, 3000 ether);
@@ -714,7 +714,7 @@ contract Testx is Test {
         {
             usdc.approve(address(lending), type(uint256).max);
             (bool success,) = address(lending).call(
-                abi.encodeWithSelector(DreamAcademyLending.liquidate.selector, user2, address(usdc), 500 ether)
+                abi.encodeWithSelector(DreamAcademyLending.liquidate.selector, user2, address(usdc), 500 ether)     // liquidate
             );
             assertFalse(success);
         }

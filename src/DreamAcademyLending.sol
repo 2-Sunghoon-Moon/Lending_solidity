@@ -201,16 +201,51 @@ contract DreamAcademyLending {
     // arg[1]: 토큰의 종류
     // arg[2]: 청산하고자 하는 양
     function liquidate(address user, address tokenAddress, uint256 amount) external {
-        console.log("[+] liquidate()");
-        
         _addUser(msg.sender);
         _updateInterest(msg.sender);
 
-        // 청산가능한 형태인지 확인
-        uint256 USDC_collateral = ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) / 10 ** 18;
-        uint256 USDC_debt = ledgers[user].USDC_debt;
+        console.log("[+] liquidate()");
+        console.log("    amount: ", amount);
+        console.log("    user debt: ", ledgers[user].USDC_debt);
+        console.log("    user_collateral_ETH", ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) / orcale.getPrice(address(USDC_TOKEN)));
 
-        require(USDC_collateral * 75 /100 < USDC_debt, "bad loan");
+
+        uint256 test = ledgers[user].USDC_debt * 100 / (ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) / orcale.getPrice(address(USDC_TOKEN)));
+        console.log("colleral_ratio: ", test);   // => (대출한 USDC / 담보물의 가치) > (75 / 100)
+
+
+        // [1] 담보가치가 75% 이상 여부에 대한 검증 
+        require(test >= 75, "liquidation hold is 75");
+
+        if(test >= 75) {
+            console.log("can liquidate!");
+        } else {
+            console.log("can't liquidate!");
+        }
+
+
+        // [2]
+        if(ledgers[user].USDC_debt <= 100 ether) {
+            //
+        } else {
+            console.log("25% only");
+            // console.log();
+            // console.log(amount);
+
+            require(amount * 4 <= ledgers[user].USDC_debt);
+
+            ledgers[user].USDC_debt -= amount;
+            
+        }
+
+
+
+
+        // // 청산가능한 형태인지 확인
+        // uint256 USDC_collateral = ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) / 10 ** 18;
+        // uint256 USDC_debt = ledgers[user].USDC_debt;
+
+        // require(USDC_collateral * 75 /100 < USDC_debt, "bad loan");
 
         // [-] 미구현
 
