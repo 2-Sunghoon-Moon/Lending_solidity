@@ -204,51 +204,34 @@ contract DreamAcademyLending {
         _addUser(msg.sender);
         _updateInterest(msg.sender);
 
-        console.log("[+] liquidate()");
-        console.log("    amount: ", amount);
-        console.log("    user debt: ", ledgers[user].USDC_debt);
-        console.log("    user_collateral_ETH", ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) / orcale.getPrice(address(USDC_TOKEN)));
+        // console.log("[+] liquidate()");
+        // console.log("    amount: ", amount);
+        // console.log("    user debt: ", ledgers[user].USDC_debt);
+        // console.log("    user_collateral_ETH", ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) / orcale.getPrice(address(USDC_TOKEN)));
 
 
-        uint256 test = ledgers[user].USDC_debt * 100 / (ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) / orcale.getPrice(address(USDC_TOKEN)));
-        console.log("colleral_ratio: ", test);   // => (대출한 USDC / 담보물의 가치) > (75 / 100)
+        uint256 debt_collateral_ratio = ledgers[user].USDC_debt * 100 * 1e18 
+                                        / (ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) 
+                                        / orcale.getPrice(address(USDC_TOKEN)));
+        console.log("colleral_ratio: ", debt_collateral_ratio);   // => (대출한 USDC / 담보물의 가치) > (75 / 100)
 
 
         // [1] 담보가치가 75% 이상 여부에 대한 검증 
-        require(test >= 75, "liquidation hold is 75");
+        require(debt_collateral_ratio >= 75 * 1e18, "liquidation hold is 75");
 
-        if(test >= 75) {
-            console.log("can liquidate!");
-        } else {
-            console.log("can't liquidate!");
-        }
-
-
-        // [2]
-        if(ledgers[user].USDC_debt <= 100 ether) {
-            //
-        } else {
-            console.log("25% only");
-            // console.log();
-            // console.log(amount);
-
+        // [2] 빚이 100 ether 초과하는 경우 한번에 1/4만 청산가능하다.
+        if(ledgers[user].USDC_debt > 100 ether) {
             require(amount * 4 <= ledgers[user].USDC_debt);
+        } 
 
-            ledgers[user].USDC_debt -= amount;
-            
-        }
+        // [돈을 주고받는 가에 대한 의문...?]
+        // usdc를 받으면 청산을 요구한 사람한테 무엇을 돌려줄 수 있지?
+        // require(amount <= USDC_TOKEN.allowance(msg.sender, address(this)));
+        // require(amount <= USDC_TOKEN.balanceOf(msg.sender));
+        // USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
 
 
-
-
-        // // 청산가능한 형태인지 확인
-        // uint256 USDC_collateral = ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) / 10 ** 18;
-        // uint256 USDC_debt = ledgers[user].USDC_debt;
-
-        // require(USDC_collateral * 75 /100 < USDC_debt, "bad loan");
-
-        // [-] 미구현
-
+        ledgers[user].USDC_debt -= amount;
     }
 
     // withdraw(address tokenAddress, uint256 amount)
