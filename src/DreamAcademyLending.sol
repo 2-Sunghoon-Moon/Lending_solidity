@@ -9,7 +9,7 @@ import "./IPriceOracle.sol";
 
 contract DreamAcademyLending {
     address private _owner;
-    IPriceOracle public orcale;
+    IPriceOracle public oracle;
 
     uint32 public constant LIQUIDATION_THRESHOLD = 75;  // unit: percentage
 
@@ -60,7 +60,7 @@ contract DreamAcademyLending {
  
     constructor(IPriceOracle _ioracle, address _lendingToken) {
         _owner = msg.sender;
-        orcale = _ioracle;
+        oracle = _ioracle;
 
         USDC_TOKEN = ERC20(_lendingToken);
         ETH_TOKEN = ERC20(address(0x0));
@@ -108,7 +108,6 @@ contract DreamAcademyLending {
             ledgers[msg.sender].USDC_balance += amount;
             USDC_TOTAL_DEPOSIT += amount;
 
-
             USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
         }
 
@@ -126,16 +125,12 @@ contract DreamAcademyLending {
         require(amount <= USDC_TOKEN.balanceOf(address(this)));
 
 
-        uint256 USDC_collateral_LTV = ledgers[msg.sender].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) / 1e18 * 50 / 100;
+        uint256 USDC_collateral_LTV = ledgers[msg.sender].ETH_collateral * oracle.getPrice(address(ETH_TOKEN)) / oracle.getPrice(address(USDC_TOKEN)) * 50 / 100;
         uint256 USDC_debt = ledgers[msg.sender].USDC_debt ;
 
-        // 대출자의 경우 이전 대출양을 제외하고 대출해줘야 한다.
-        console.log(USDC_collateral_LTV);
-        console.log(USDC_debt);
 
         require(amount + USDC_debt <= USDC_collateral_LTV );
 
-        
         ledgers[msg.sender].USDC_debt += amount;
         ledgers[msg.sender].USDC_borrow_time = block.number;
 
@@ -146,7 +141,6 @@ contract DreamAcademyLending {
         _interInfo.blockTime = block.number;
 
         USDC_TOKEN.transfer(msg.sender, amount);
-
 
         emit Borrow(msg.sender, amount);
     }
@@ -162,7 +156,6 @@ contract DreamAcademyLending {
         _updateInterest(msg.sender);
 
         
-        
         require(tokenAddress == address(USDC_TOKEN), "1");
         require(amount > 0 , "2");
         require(USDC_TOKEN.allowance(msg.sender, address(this)) >= amount, "3");
@@ -172,7 +165,6 @@ contract DreamAcademyLending {
         _interInfo.USDC_total_debt -= amount;
         ledgers[msg.sender].USDC_debt -= amount;
 
-        
         emit Repay(msg.sender, amount);
     }
 
@@ -186,15 +178,12 @@ contract DreamAcademyLending {
     // arg[2]: 청산하고자 하는 양
     function liquidate(address user, address tokenAddress, uint256 amount) external {
         require(tokenAddress == address(USDC_TOKEN));
-
         _addUser(msg.sender);
         _updateInterest(msg.sender);
 
-
-
         uint256 debt_collateral_ratio = ledgers[user].USDC_debt * 100 * 1e18 
-                                        / (ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) 
-                                        / orcale.getPrice(address(USDC_TOKEN)));
+                                        / (ledgers[user].ETH_collateral * oracle.getPrice(address(ETH_TOKEN)) 
+                                        / oracle.getPrice(address(USDC_TOKEN)));
 
         // [1] 담보가치가 75% 이상 여부에 대한 검증 
         require(debt_collateral_ratio >= 75 * 1e18, "liquidation hold is 75");
@@ -204,13 +193,16 @@ contract DreamAcademyLending {
             require(amount * 4 <= ledgers[user].USDC_debt);
         } 
 
-        // [돈을 주고받는 가에 대한 의문...?]
-        // usdc를 받으면 청산을 요구한 사람한테 무엇을 돌려줄 수 있지?
-        // require(amount <= USDC_TOKEN.allowance(msg.sender, address(this)));
-        // require(amount <= USDC_TOKEN.balanceOf(msg.sender));
-        // USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
-        ledgers[user].USDC_debt -= amount;
+        // [3] 실제 청산을 통해 빚을 차감해주고 청산을 진행한 자가 갚아준 빚의 비율만큼 담보를 획득
+        require(amount <= USDC_TOKEN.allowance(msg.sender, address(this)));
+        require(amount <= USDC_TOKEN.balanceOf(msg.sender));
+        require(ledgers[user].USDC_debt > 0);
 
+        ledgers[user].USDC_debt -= amount;
+        uint256 ETH_ratio = amount * ledgers[user].ETH_collateral / ledgers[user].USDC_debt;
+        
+        USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
+        payable(msg.sender).transfer(ETH_ratio);
 
         emit Liquidate(msg.sender, user, amount);
     }
@@ -231,7 +223,7 @@ contract DreamAcademyLending {
 
         if(tokenAddress == address(ETH_TOKEN)) {
             if(ledgers[msg.sender].USDC_debt != 0) { // 빚이 존재할 경우 환산해보자
-                require(ledgers[msg.sender].USDC_debt * orcale.getPrice(address(USDC_TOKEN)) / orcale.getPrice(address(ETH_TOKEN)) * 1e28 
+                require(ledgers[msg.sender].USDC_debt * oracle.getPrice(address(USDC_TOKEN)) / oracle.getPrice(address(ETH_TOKEN)) * 1e28 
                         <= (ledgers[msg.sender].ETH_collateral - amount) * 1e28 * 75 / 100 );
 
                 ledgers[msg.sender].ETH_collateral -= amount;
