@@ -49,7 +49,15 @@ contract DreamAcademyLending {
 
     InterestInfo public _interInfo;
 
+    
+    // [이벤트 정의]
+    event Deposit(address indexed user, address indexed toeknAddress, uint256 indexed amount);
+    event Borrow(address indexed user, uint256 indexed amount);
+    event Repay(address indexed user, uint256 indexed amount);
+    event Liquidate(address indexed user, address indexed targetUser, uint256 indexed amount);
+    event Withdraw(address indexed user, address indexed toeknAddress, uint256 indexed amount);
 
+ 
     constructor(IPriceOracle _ioracle, address _lendingToken) {
         _owner = msg.sender;
         orcale = _ioracle;
@@ -63,9 +71,6 @@ contract DreamAcademyLending {
 
 
     function _addUser(address _user) private {
-        // console.log("_addUser()");
-        // console.log(_user);
-
         if(!userState[_user]) {
             users.push(_user);
 
@@ -73,38 +78,21 @@ contract DreamAcademyLending {
         }
     }
 
+
     function initializeLendingProtocol(address token) payable external {
         require(_owner == msg.sender);
-
 
         USDC_TOKEN.transferFrom(msg.sender, address(this), msg.value);
         USDC_BALANCE += msg.value;
     }
 
 
-    function _printUserLedger(address user) internal {
-        console.log("[USER]");
-        console.log("ETH_collateral: ", ledgers[user].ETH_collateral);
-        console.log("USDC_balance: ", ledgers[user].USDC_balance);
-        console.log("USDC_debt: ", ledgers[user].USDC_debt);
-        console.log("USDC_borrow_time: ",ledgers[user].USDC_borrow_time);
-        console.log("\n");
-    }
 
-    function _printLendingBalance() internal {
-        console.log("ETH: ", address(this).balance);
-        console.log("USDC: ", USDC_TOKEN.balanceOf(address(this)));
-        console.log("\n");
-    }
 
 
     function deposit(address tokenAddress, uint256 amount) payable external {
-        console.log("[+] deposit");
-
         _addUser(msg.sender);
         _updateInterest(msg.sender);
-
-        _printLendingBalance();
 
         require(amount > 0);
         require(tokenAddress == address(USDC_TOKEN) || tokenAddress == address(ETH_TOKEN));
@@ -123,12 +111,13 @@ contract DreamAcademyLending {
 
             USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
         }
+
+        emit Deposit(msg.sender, tokenAddress, amount);
     }
 
 
-    function borrow(address tokenAddress, uint256 amount) payable external {
-        console.log("[+] borrow");
 
+    function borrow(address tokenAddress, uint256 amount) payable external {
         _updateInterest(msg.sender);
         _addUser(msg.sender);
 
@@ -147,7 +136,6 @@ contract DreamAcademyLending {
         require(amount + USDC_debt <= USDC_collateral_LTV );
 
         
-
         ledgers[msg.sender].USDC_debt += amount;
         ledgers[msg.sender].USDC_borrow_time = block.number;
 
@@ -158,6 +146,9 @@ contract DreamAcademyLending {
         _interInfo.blockTime = block.number;
 
         USDC_TOKEN.transfer(msg.sender, amount);
+
+
+        emit Borrow(msg.sender, amount);
     }
 
 
@@ -167,12 +158,9 @@ contract DreamAcademyLending {
     // arg[1]: 상환금액
     // TODO: 이자율 고려해야 하는 것으로 보임
     function repay(address tokenAddress, uint256 amount) external {
-
         _addUser(msg.sender);
         _updateInterest(msg.sender);
-        console.log("[+] repay()");
-        console.log(" ledgers[msg.sender].USDC_debt", ledgers[msg.sender].USDC_debt);
-        console.log(" ledgers[msg.sender].USDC_debt", ledgers[msg.sender].USDC_debt);
+
         
         
         require(tokenAddress == address(USDC_TOKEN), "1");
@@ -183,6 +171,9 @@ contract DreamAcademyLending {
 
         _interInfo.USDC_total_debt -= amount;
         ledgers[msg.sender].USDC_debt -= amount;
+
+        
+        emit Repay(msg.sender, amount);
     }
 
 
@@ -199,17 +190,11 @@ contract DreamAcademyLending {
         _addUser(msg.sender);
         _updateInterest(msg.sender);
 
-        // console.log("[+] liquidate()");
-        // console.log("    amount: ", amount);
-        // console.log("    user debt: ", ledgers[user].USDC_debt);
-        // console.log("    user_collateral_ETH", ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) / orcale.getPrice(address(USDC_TOKEN)));
 
 
         uint256 debt_collateral_ratio = ledgers[user].USDC_debt * 100 * 1e18 
                                         / (ledgers[user].ETH_collateral * orcale.getPrice(address(ETH_TOKEN)) 
                                         / orcale.getPrice(address(USDC_TOKEN)));
-        console.log("colleral_ratio: ", debt_collateral_ratio);   // => (대출한 USDC / 담보물의 가치) > (75 / 100)
-
 
         // [1] 담보가치가 75% 이상 여부에 대한 검증 
         require(debt_collateral_ratio >= 75 * 1e18, "liquidation hold is 75");
@@ -225,6 +210,9 @@ contract DreamAcademyLending {
         // require(amount <= USDC_TOKEN.balanceOf(msg.sender));
         // USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
         ledgers[user].USDC_debt -= amount;
+
+
+        emit Liquidate(msg.sender, user, amount);
     }
 
     
@@ -234,12 +222,8 @@ contract DreamAcademyLending {
     // arg[0]: 인출하고자 하는 토큰
     // arg[1]: 인출하고자 하는 금액
     function withdraw(address tokenAddress, uint256 amount) payable external {
-        console.log("[+] withdraw");
-        console.log(amount);
         _addUser(msg.sender);
         _updateInterest(msg.sender);
-
-        _printLendingBalance();
 
 
         require(0 < amount);
@@ -281,6 +265,8 @@ contract DreamAcademyLending {
 
             }
         }
+
+        emit Withdraw(msg.sender, tokenAddress, amount);
     }
 
 
@@ -318,9 +304,6 @@ contract DreamAcademyLending {
             _interInfo.USDC_total_debt = interestAfter;
             _interInfo.blockTime = block.number;
         } 
-
-
-        console.log("END INTEREST[+]");
     }
 
 
