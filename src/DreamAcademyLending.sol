@@ -199,6 +199,8 @@ contract DreamAcademyLending {
         require(ledgers[user].USDC_debt > 0);
 
         ledgers[user].USDC_debt -= amount;
+        _interInfo.USDC_total_debt -= amount;
+        
         uint256 ETH_ratio = amount * ledgers[user].ETH_collateral / ledgers[user].USDC_debt;
         
         USDC_TOKEN.transferFrom(msg.sender, address(this), amount);
@@ -274,7 +276,7 @@ contract DreamAcademyLending {
 
 
         if(_blockPeriod > 0) {
-            uint256 interestAfter = test2(_interInfo.USDC_total_debt, _blockPeriod) / 10 ** 9;
+            uint256 interestAfter = _calculate(_interInfo.USDC_total_debt, _blockPeriod) / 10 ** 9;
             // console.log(interestAfter);
 
             for(uint256 i=0; i<users.length; i++) {
@@ -310,17 +312,7 @@ contract DreamAcademyLending {
 
 
 
-
-
-    // 현재 이자만 업데이트 해보자
-    function _updateUserLedger(address user, uint256 usdc_b) private {
-        ledgers[user].USDC_balance = usdc_b;
-    }
-
-
-
-
-    function test2(uint256 _amountUSDC, uint256 _blockPeriod) internal returns(uint256) {
+    function _calculate(uint256 _amountUSDC, uint256 _blockPeriod) internal returns(uint256) {
         uint256 interest;
 
         uint256 blockDay = _blockPeriod / 7200;
